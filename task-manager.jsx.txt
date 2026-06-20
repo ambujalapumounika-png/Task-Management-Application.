@@ -1,0 +1,467 @@
+import { useState, useEffect, useRef } from "react";
+
+// ─── Design Tokens ──────────────────────────────────────────────────────────
+// Palette: deep navy canvas, electric indigo accent, warm slate for text,
+// soft pewter for cards, coral for danger. Not a dark-mode template —
+// more like a control room that means business.
+// Signature: "status rail" — a glowing left-border system encoding task urgency.
+
+const COLORS = {
+  bg: "#0D0F14",
+  surface: "#161A24",
+  card: "#1E2333",
+  cardHover: "#232840",
+  border: "#2A3050",
+  accent: "#5865F2",
+  accentGlow: "#5865F230",
+  accentHover: "#6B78FF",
+  success: "#22C55E",
+  warning: "#F59E0B",
+  danger: "#EF4444",
+  text: "#E8ECF4",
+  textMuted: "#7B86A8",
+  textFaint: "#3D4460",
+};
+
+const STATUS_COLORS = {
+  todo: "#7B86A8",
+  "in-progress": "#5865F2",
+  done: "#22C55E",
+};
+
+const PRIORITY_COLORS = {
+  low: "#22C55E",
+  medium: "#F59E0B",
+  high: "#EF4444",
+};
+
+// ─── Mock Auth & Data ────────────────────────────────────────────────────────
+const MOCK_USERS = [
+  { id: 1, name: "Alex Chen", email: "alex@tasks.dev", password: "demo123", avatar: "AC" },
+  { id: 2, name: "Sam Rivera", email: "sam@tasks.dev", password: "demo123", avatar: "SR" },
+];
+
+const INITIAL_TASKS = [
+  { id: 1, title: "Design system setup", description: "Define tokens, components, and patterns", status: "done", priority: "high", dueDate: "2026-06-10", userId: 1, createdAt: "2026-06-01" },
+  { id: 2, title: "API integration", description: "Connect frontend to REST endpoints", status: "in-progress", priority: "high", dueDate: "2026-06-20", userId: 1, createdAt: "2026-06-05" },
+  { id: 3, title: "Write unit tests", description: "Coverage for all utility functions", status: "todo", priority: "medium", dueDate: "2026-06-25", userId: 1, createdAt: "2026-06-08" },
+  { id: 4, title: "Documentation draft", description: "README and inline comments", status: "todo", priority: "low", dueDate: "2026-06-30", userId: 1, createdAt: "2026-06-09" },
+  { id: 5, title: "Performance audit", description: "Lighthouse scores and bundle analysis", status: "in-progress", priority: "medium", dueDate: "2026-06-18", userId: 1, createdAt: "2026-06-12" },
+];
+
+// ─── Utility ─────────────────────────────────────────────────────────────────
+function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const diff = new Date(dateStr) - new Date(new Date().toDateString());
+  return Math.ceil(diff / 86400000);
+}
+
+function fmtDate(str) {
+  if (!str) return "";
+  return new Date(str).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+// ─── Inline Styles ───────────────────────────────────────────────────────────
+const S = {
+  app: { minHeight: "100vh", background: COLORS.bg, color: COLORS.text, fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif", fontSize: 14 },
+  // Auth
+  authWrap: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 24 },
+  authCard: { background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: "40px 36px", width: "100%", maxWidth: 400 },
+  authLogo: { display: "flex", alignItems: "center", gap: 10, marginBottom: 32 },
+  authLogoIcon: { width: 36, height: 36, background: COLORS.accent, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 },
+  authTitle: { fontSize: 22, fontWeight: 700, letterSpacing: -0.5, color: COLORS.text },
+  authSubtitle: { fontSize: 13, color: COLORS.textMuted, marginTop: 2 },
+  fieldGroup: { marginBottom: 16 },
+  label: { display: "block", fontSize: 12, fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
+  input: { width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 12px", color: COLORS.text, fontSize: 14, outline: "none", boxSizing: "border-box", transition: "border 0.15s" },
+  btnPrimary: { width: "100%", background: COLORS.accent, color: "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 600, fontSize: 14, cursor: "pointer", transition: "background 0.15s", letterSpacing: 0.2 },
+  demoHint: { marginTop: 20, padding: "12px 14px", background: COLORS.accentGlow, border: `1px solid ${COLORS.accent}40`, borderRadius: 8, fontSize: 12, color: COLORS.textMuted },
+  // Layout
+  layout: { display: "flex", minHeight: "100vh" },
+  sidebar: { width: 220, background: COLORS.surface, borderRight: `1px solid ${COLORS.border}`, padding: "24px 0", display: "flex", flexDirection: "column", flexShrink: 0 },
+  sidebarLogo: { display: "flex", alignItems: "center", gap: 10, padding: "0 20px 28px" },
+  sidebarLogoIcon: { width: 30, height: 30, background: COLORS.accent, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 },
+  sidebarLogoText: { fontWeight: 700, fontSize: 16, letterSpacing: -0.3 },
+  navItem: (active) => ({ display: "flex", alignItems: "center", gap: 10, padding: "9px 20px", cursor: "pointer", color: active ? COLORS.text : COLORS.textMuted, background: active ? COLORS.accentGlow : "transparent", borderLeft: `3px solid ${active ? COLORS.accent : "transparent"}`, fontSize: 13, fontWeight: active ? 600 : 400, transition: "all 0.15s" }),
+  main: { flex: 1, overflow: "auto", padding: "28px 32px" },
+  // Header
+  topBar: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 },
+  pageTitle: { fontSize: 22, fontWeight: 700, letterSpacing: -0.5 },
+  pageSubtitle: { fontSize: 13, color: COLORS.textMuted, marginTop: 2 },
+  avatar: (size = 32) => ({ width: size, height: size, borderRadius: "50%", background: `linear-gradient(135deg, ${COLORS.accent}, #8B5CF6)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.38, fontWeight: 700, color: "#fff", flexShrink: 0 }),
+  userBar: { display: "flex", alignItems: "center", gap: 12 },
+  userName: { fontSize: 13, fontWeight: 600 },
+  userRole: { fontSize: 11, color: COLORS.textMuted },
+  logoutBtn: { background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "5px 10px", color: COLORS.textMuted, cursor: "pointer", fontSize: 12 },
+  // Stats
+  statsRow: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 14, marginBottom: 28 },
+  statCard: { background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 12, padding: "18px 20px" },
+  statNum: { fontSize: 26, fontWeight: 800, letterSpacing: -1 },
+  statLabel: { fontSize: 12, color: COLORS.textMuted, marginTop: 4, textTransform: "uppercase", letterSpacing: 0.7 },
+  // Toolbar
+  toolbar: { display: "flex", alignItems: "center", gap: 10, marginBottom: 20, flexWrap: "wrap" },
+  searchInput: { background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "8px 12px", color: COLORS.text, fontSize: 13, outline: "none", minWidth: 200, flex: 1 },
+  filterBtn: (active) => ({ background: active ? COLORS.accent : COLORS.card, border: `1px solid ${active ? COLORS.accent : COLORS.border}`, borderRadius: 6, padding: "7px 12px", color: active ? "#fff" : COLORS.textMuted, cursor: "pointer", fontSize: 12, fontWeight: 500, transition: "all 0.15s" }),
+  addBtn: { background: COLORS.accent, border: "none", borderRadius: 8, padding: "8px 16px", color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginLeft: "auto", transition: "background 0.15s" },
+  // Task card — the STATUS RAIL is the signature: glowing left border
+  taskCard: (priority) => ({
+    background: COLORS.card,
+    border: `1px solid ${COLORS.border}`,
+    borderLeft: `3px solid ${PRIORITY_COLORS[priority]}`,
+    borderRadius: 10,
+    padding: "14px 16px",
+    marginBottom: 10,
+    cursor: "pointer",
+    transition: "background 0.15s, box-shadow 0.15s",
+    boxShadow: `inset 3px 0 12px ${PRIORITY_COLORS[priority]}18`,
+    position: "relative",
+  }),
+  taskTitle: { fontSize: 14, fontWeight: 600, marginBottom: 4, letterSpacing: -0.2 },
+  taskDesc: { fontSize: 12, color: COLORS.textMuted, marginBottom: 10, lineHeight: 1.5 },
+  taskMeta: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  badge: (color) => ({ display: "inline-flex", alignItems: "center", gap: 4, background: `${color}18`, color: color, border: `1px solid ${color}40`, borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 600, textTransform: "capitalize" }),
+  dueBadge: (d) => ({ fontSize: 11, color: d === null ? COLORS.textMuted : d < 0 ? COLORS.danger : d <= 2 ? COLORS.warning : COLORS.textMuted }),
+  taskActions: { position: "absolute", top: 12, right: 12, display: "flex", gap: 6 },
+  iconBtn: (color) => ({ background: "transparent", border: "none", color: color || COLORS.textMuted, cursor: "pointer", padding: 4, borderRadius: 4, fontSize: 14, lineHeight: 1, transition: "color 0.15s" }),
+  emptyState: { textAlign: "center", padding: "60px 0", color: COLORS.textMuted },
+  emptyIcon: { fontSize: 40, marginBottom: 12 },
+  emptyText: { fontSize: 15, fontWeight: 600, color: COLORS.textMuted },
+  emptySub: { fontSize: 13, marginTop: 6 },
+  // Modal
+  overlay: { position: "fixed", inset: 0, background: "#00000080", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 24 },
+  modal: { background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 16, padding: 32, width: "100%", maxWidth: 480, maxHeight: "90vh", overflow: "auto" },
+  modalTitle: { fontSize: 18, fontWeight: 700, letterSpacing: -0.4, marginBottom: 24 },
+  modalActions: { display: "flex", gap: 10, marginTop: 24 },
+  btnSecondary: { flex: 1, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 0", color: COLORS.textMuted, fontWeight: 600, fontSize: 13, cursor: "pointer" },
+  btnDanger: { background: COLORS.danger, border: "none", borderRadius: 8, padding: "10px 16px", color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer" },
+  select: { width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 12px", color: COLORS.text, fontSize: 14, outline: "none", boxSizing: "border-box" },
+  textarea: { width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 12px", color: COLORS.text, fontSize: 14, outline: "none", boxSizing: "border-box", resize: "vertical", minHeight: 80, fontFamily: "inherit" },
+  // Section label
+  sectionLabel: { fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: COLORS.textFaint, marginBottom: 10, marginTop: 8, padding: "0 20px" },
+};
+
+// ─── Auth Screen ─────────────────────────────────────────────────────────────
+function AuthScreen({ onLogin }) {
+  const [email, setEmail] = useState("alex@tasks.dev");
+  const [password, setPassword] = useState("demo123");
+  const [error, setError] = useState("");
+
+  function handleLogin() {
+    const user = MOCK_USERS.find(u => u.email === email && u.password === password);
+    if (user) { onLogin(user); }
+    else { setError("Incorrect email or password."); }
+  }
+
+  return (
+    <div style={S.authWrap}>
+      <div style={S.authCard}>
+        <div style={S.authLogo}>
+          <div style={S.authLogoIcon}>✦</div>
+          <div>
+            <div style={S.authTitle}>TaskFlow</div>
+            <div style={S.authSubtitle}>Sign in to continue</div>
+          </div>
+        </div>
+        <div style={S.fieldGroup}>
+          <label style={S.label}>Email</label>
+          <input style={S.input} value={email} onChange={e => { setEmail(e.target.value); setError(""); }} onKeyDown={e => e.key === "Enter" && handleLogin()} placeholder="you@example.com" />
+        </div>
+        <div style={S.fieldGroup}>
+          <label style={S.label}>Password</label>
+          <input style={S.input} type="password" value={password} onChange={e => { setPassword(e.target.value); setError(""); }} onKeyDown={e => e.key === "Enter" && handleLogin()} placeholder="••••••••" />
+        </div>
+        {error && <div style={{ color: COLORS.danger, fontSize: 12, marginBottom: 14 }}>{error}</div>}
+        <button style={S.btnPrimary} onClick={handleLogin}>Sign in →</button>
+        <div style={S.demoHint}>
+          <strong>Demo accounts</strong><br />
+          alex@tasks.dev / demo123<br />
+          sam@tasks.dev / demo123
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Task Modal ───────────────────────────────────────────────────────────────
+function TaskModal({ task, onSave, onDelete, onClose }) {
+  const isNew = !task.id;
+  const [form, setForm] = useState({
+    title: task.title || "",
+    description: task.description || "",
+    status: task.status || "todo",
+    priority: task.priority || "medium",
+    dueDate: task.dueDate || "",
+  });
+
+  function set(k) { return v => setForm(f => ({ ...f, [k]: v })); }
+
+  function handleSave() {
+    if (!form.title.trim()) return;
+    onSave({ ...task, ...form });
+  }
+
+  return (
+    <div style={S.overlay} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={S.modal}>
+        <div style={S.modalTitle}>{isNew ? "New task" : "Edit task"}</div>
+        <div style={S.fieldGroup}>
+          <label style={S.label}>Title</label>
+          <input style={S.input} value={form.title} onChange={e => set("title")(e.target.value)} placeholder="What needs to be done?" autoFocus />
+        </div>
+        <div style={S.fieldGroup}>
+          <label style={S.label}>Description</label>
+          <textarea style={S.textarea} value={form.description} onChange={e => set("description")(e.target.value)} placeholder="Add context or acceptance criteria…" />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+          <div>
+            <label style={S.label}>Status</label>
+            <select style={S.select} value={form.status} onChange={e => set("status")(e.target.value)}>
+              <option value="todo">To do</option>
+              <option value="in-progress">In progress</option>
+              <option value="done">Done</option>
+            </select>
+          </div>
+          <div>
+            <label style={S.label}>Priority</label>
+            <select style={S.select} value={form.priority} onChange={e => set("priority")(e.target.value)}>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+        </div>
+        <div style={S.fieldGroup}>
+          <label style={S.label}>Due date</label>
+          <input style={S.input} type="date" value={form.dueDate} onChange={e => set("dueDate")(e.target.value)} />
+        </div>
+        <div style={S.modalActions}>
+          <button style={S.btnSecondary} onClick={onClose}>Cancel</button>
+          {!isNew && <button style={S.btnDanger} onClick={() => onDelete(task.id)}>Delete</button>}
+          <button style={{ ...S.btnPrimary, flex: 1 }} onClick={handleSave}>{isNew ? "Create task" : "Save changes"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Task Card ────────────────────────────────────────────────────────────────
+function TaskCard({ task, onEdit, onStatusChange }) {
+  const [hovered, setHovered] = useState(false);
+  const days = daysUntil(task.dueDate);
+
+  const nextStatus = { todo: "in-progress", "in-progress": "done", done: "todo" };
+
+  return (
+    <div
+      style={{ ...S.taskCard(task.priority), background: hovered ? COLORS.cardHover : COLORS.card }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={() => onEdit(task)}
+    >
+      <div style={S.taskActions}>
+        <button style={S.iconBtn(STATUS_COLORS[task.status])} onClick={e => { e.stopPropagation(); onStatusChange(task, nextStatus[task.status]); }} title="Cycle status">
+          {task.status === "done" ? "✓" : task.status === "in-progress" ? "◐" : "○"}
+        </button>
+      </div>
+      <div style={{ ...S.taskTitle, textDecoration: task.status === "done" ? "line-through" : "none", opacity: task.status === "done" ? 0.6 : 1 }}>{task.title}</div>
+      {task.description && <div style={S.taskDesc}>{task.description}</div>}
+      <div style={S.taskMeta}>
+        <span style={S.badge(STATUS_COLORS[task.status])}>{task.status === "in-progress" ? "In progress" : task.status === "todo" ? "To do" : "Done"}</span>
+        <span style={S.badge(PRIORITY_COLORS[task.priority])}>{task.priority}</span>
+        {task.dueDate && (
+          <span style={S.dueBadge(days)}>
+            {days === null ? "" : days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? "Due today" : `Due ${fmtDate(task.dueDate)}`}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [tasks, setTasks] = useState(INITIAL_TASKS);
+  const [view, setView] = useState("tasks");
+  const [search, setSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterPriority, setFilterPriority] = useState("all");
+  const [editingTask, setEditingTask] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const nextId = useRef(100);
+
+  const myTasks = tasks.filter(t => !user || t.userId === user.id);
+
+  const filtered = myTasks.filter(t => {
+    const matchSearch = !search || t.title.toLowerCase().includes(search.toLowerCase()) || t.description?.toLowerCase().includes(search.toLowerCase());
+    const matchStatus = filterStatus === "all" || t.status === filterStatus;
+    const matchPriority = filterPriority === "all" || t.priority === filterPriority;
+    return matchSearch && matchStatus && matchPriority;
+  });
+
+  const stats = {
+    total: myTasks.length,
+    todo: myTasks.filter(t => t.status === "todo").length,
+    inProgress: myTasks.filter(t => t.status === "in-progress").length,
+    done: myTasks.filter(t => t.status === "done").length,
+  };
+
+  function openNew() {
+    setEditingTask({ userId: user.id, createdAt: new Date().toISOString().slice(0, 10) });
+    setShowModal(true);
+  }
+  function openEdit(task) { setEditingTask(task); setShowModal(true); }
+  function closeModal() { setShowModal(false); setEditingTask(null); }
+
+  function saveTask(task) {
+    if (task.id) {
+      setTasks(prev => prev.map(t => t.id === task.id ? task : t));
+    } else {
+      setTasks(prev => [...prev, { ...task, id: nextId.current++ }]);
+    }
+    closeModal();
+  }
+
+  function deleteTask(id) {
+    setTasks(prev => prev.filter(t => t.id !== id));
+    closeModal();
+  }
+
+  function cycleStatus(task, newStatus) {
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
+  }
+
+  if (!user) return <AuthScreen onLogin={setUser} />;
+
+  const navItems = [
+    { id: "tasks", icon: "◈", label: "My tasks" },
+    { id: "activity", icon: "◉", label: "Activity" },
+  ];
+
+  return (
+    <div style={S.app}>
+      <div style={S.layout}>
+        {/* Sidebar */}
+        <div style={S.sidebar}>
+          <div style={S.sidebarLogo}>
+            <div style={S.sidebarLogoIcon}>✦</div>
+            <span style={S.sidebarLogoText}>TaskFlow</span>
+          </div>
+          <div style={S.sectionLabel}>Workspace</div>
+          {navItems.map(n => (
+            <div key={n.id} style={S.navItem(view === n.id)} onClick={() => setView(n.id)}>
+              <span style={{ fontSize: 16 }}>{n.icon}</span>
+              <span>{n.label}</span>
+            </div>
+          ))}
+          <div style={{ marginTop: "auto", padding: "20px 20px 0", borderTop: `1px solid ${COLORS.border}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={S.avatar(30)}>{user.avatar}</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{user.name}</div>
+                <div style={{ fontSize: 11, color: COLORS.textMuted }}>Member</div>
+              </div>
+            </div>
+            <button style={{ ...S.logoutBtn, marginTop: 12, width: "100%" }} onClick={() => setUser(null)}>Sign out</button>
+          </div>
+        </div>
+
+        {/* Main */}
+        <div style={S.main}>
+          {view === "tasks" && (
+            <>
+              <div style={S.topBar}>
+                <div>
+                  <div style={S.pageTitle}>My tasks</div>
+                  <div style={S.pageSubtitle}>Track what's on your plate</div>
+                </div>
+                <div style={S.userBar}>
+                  <div style={S.avatar(36)}>{user.avatar}</div>
+                  <div>
+                    <div style={S.userName}>{user.name}</div>
+                    <div style={S.userRole}>{user.email}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Stats */}
+              <div style={S.statsRow}>
+                {[
+                  { label: "Total", value: stats.total, color: COLORS.textMuted },
+                  { label: "To do", value: stats.todo, color: STATUS_COLORS.todo },
+                  { label: "In progress", value: stats.inProgress, color: STATUS_COLORS["in-progress"] },
+                  { label: "Done", value: stats.done, color: STATUS_COLORS.done },
+                ].map(s => (
+                  <div key={s.label} style={S.statCard}>
+                    <div style={{ ...S.statNum, color: s.color }}>{s.value}</div>
+                    <div style={S.statLabel}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Toolbar */}
+              <div style={S.toolbar}>
+                <input style={S.searchInput} placeholder="Search tasks…" value={search} onChange={e => setSearch(e.target.value)} />
+                {["all", "todo", "in-progress", "done"].map(s => (
+                  <button key={s} style={S.filterBtn(filterStatus === s)} onClick={() => setFilterStatus(s)}>
+                    {s === "all" ? "All" : s === "in-progress" ? "In progress" : s === "todo" ? "To do" : "Done"}
+                  </button>
+                ))}
+                <span style={{ color: COLORS.textFaint, fontSize: 12 }}>|</span>
+                {["all", "high", "medium", "low"].map(p => (
+                  <button key={p} style={{ ...S.filterBtn(filterPriority === p), color: filterPriority === p ? "#fff" : (p !== "all" ? PRIORITY_COLORS[p] : COLORS.textMuted) }}>
+                    <span onClick={() => setFilterPriority(p)}>{p === "all" ? "Any priority" : p.charAt(0).toUpperCase() + p.slice(1)}</span>
+                  </button>
+                ))}
+                <button style={S.addBtn} onClick={openNew}>＋ New task</button>
+              </div>
+
+              {/* Task list */}
+              {filtered.length === 0 ? (
+                <div style={S.emptyState}>
+                  <div style={S.emptyIcon}>{search ? "🔍" : "✓"}</div>
+                  <div style={S.emptyText}>{search ? "No matching tasks" : "Nothing here yet"}</div>
+                  <div style={S.emptySub}>{search ? "Try a different search term" : "Create your first task to get started"}</div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ ...S.sectionLabel, marginBottom: 12 }}>{filtered.length} task{filtered.length !== 1 ? "s" : ""}</div>
+                  {filtered.map(t => (
+                    <TaskCard key={t.id} task={t} onEdit={openEdit} onStatusChange={cycleStatus} />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {view === "activity" && (
+            <>
+              <div style={S.topBar}>
+                <div>
+                  <div style={S.pageTitle}>Activity</div>
+                  <div style={S.pageSubtitle}>Recent task updates</div>
+                </div>
+              </div>
+              <div style={{ maxWidth: 560 }}>
+                {[...myTasks].sort((a, b) => b.createdAt?.localeCompare(a.createdAt)).map(t => (
+                  <div key={t.id} style={{ display: "flex", gap: 14, marginBottom: 18, alignItems: "flex-start" }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: PRIORITY_COLORS[t.priority], marginTop: 5, flexShrink: 0, boxShadow: `0 0 8px ${PRIORITY_COLORS[t.priority]}` }} />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, cursor: "pointer" }} onClick={() => openEdit(t)}>{t.title}</div>
+                      <div style={{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 }}>Created {fmtDate(t.createdAt)} · <span style={{ color: STATUS_COLORS[t.status] }}>{t.status}</span></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Modal */}
+      {showModal && editingTask && (
+        <TaskModal task={editingTask} onSave={saveTask} onDelete={deleteTask} onClose={closeModal} />
+      )}
+    </div>
+  );
+}
